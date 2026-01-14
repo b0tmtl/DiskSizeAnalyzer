@@ -38,8 +38,8 @@
     PrivateData = @{
         PSData = @{
             Tags = @('Disk', 'Storage', 'MFT', 'NTFS', 'Analysis', 'Space')
-            LicenseUri = ''
-            ProjectUri = ''
+            LicenseUri = 'https://github.com/b0tmtl/DiskSizeAnalyzer/blob/main/LICENSE'
+            ProjectUri = 'https://github.com/b0tmtl/DiskSizeAnalyzer'
             ReleaseNotes = 'Initial release with remote computer support'
         }
     }
