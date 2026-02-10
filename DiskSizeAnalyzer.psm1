@@ -620,6 +620,13 @@ function Export-DiskSpaceHtml {
     }
     $totalSizeAllFormatted = Format-FileSize $totalSizeAll
     $scanTimeFormatted = "{0:mm\:ss\.fff}" -f $ScanTime
+    $diskTotal = if ($Results[0].DiskTotal) { $Results[0].DiskTotal } else { 0 }
+    $diskFree = if ($Results[0].DiskFree) { $Results[0].DiskFree } else { 0 }
+    $diskUsed = if ($Results[0].DiskUsed) { $Results[0].DiskUsed } else { 0 }
+    $diskTotalFormatted = Format-FileSize $diskTotal
+    $diskFreeFormatted = Format-FileSize $diskFree
+    $diskUsedFormatted = Format-FileSize $diskUsed
+    $diskUsedPercent = if ($diskTotal -gt 0) { [math]::Round(($diskUsed / $diskTotal) * 100, 1) } else { 0 }
     
     function Get-BarColorClass {
         param([double]$Percentage)
@@ -685,6 +692,10 @@ function Export-DiskSpaceHtml {
         $rootSizeFormatted = Format-FileSize $rootSize
         $compScanTime = if ($computerItems.Count -gt 0) { $computerItems[0].ScanTime } else { [timespan]::Zero }
         $compScanTimeFormatted = "{0:mm\:ss\.fff}" -f $compScanTime
+        $compDiskTotal = if ($computerItems[0].DiskTotal) { Format-FileSize $computerItems[0].DiskTotal } else { "N/A" }
+        $compDiskFree = if ($computerItems[0].DiskFree) { Format-FileSize $computerItems[0].DiskFree } else { "N/A" }
+        $compDiskUsed = if ($computerItems[0].DiskUsed) { Format-FileSize $computerItems[0].DiskUsed } else { "N/A" }
+        $compDiskPct = if ($computerItems[0].DiskTotal -gt 0) { [math]::Round(($computerItems[0].DiskUsed / $computerItems[0].DiskTotal) * 100, 1) } else { 0 }
         $compScanEnd = if ($computerItems.Count -gt 0 -and $computerItems[0].ScanDateEnd) { $computerItems[0].ScanDateEnd.ToString('HH:mm:ss') } else { "N/A" }
         $headerColorClass = $headerColors[$computerIndex % $headerColors.Count]
         $allItems = @(); $allItems += $dirs; $allItems += $files
@@ -693,7 +704,7 @@ function Export-DiskSpaceHtml {
         <div class="computer-section">
             <div class="computer-header $headerColorClass" onclick="toggleComputer(this)">
                 <div class="computer-info"><button class="computer-toggle expanded">&#x25B6;</button><span class="computer-icon">&#x1F5A5;</span><span class="computer-name">$computerName</span><span class="computer-drive">${DriveLetter}:\</span><span class="status-badge status-online">&#x2713; Scanned</span></div>
-                <div class="computer-stats"><div class="computer-stat"><span class="computer-stat-label">Total Size</span><span class="computer-stat-value size">$rootSizeFormatted</span></div><div class="computer-stat"><span class="computer-stat-label">Scan Time</span><span class="computer-stat-value time">$compScanTimeFormatted</span></div><div class="computer-stat"><span class="computer-stat-label">Completed</span><span class="computer-stat-value">$compScanEnd</span></div></div>
+                <div class="computer-stats"><div class="computer-stat"><span class="computer-stat-label">Disk</span><span class="computer-stat-value size">$compDiskUsed / $compDiskTotal ($compDiskPct%)</span></div><div class="computer-stat"><span class="computer-stat-label">Total Size</span><span class="computer-stat-value size">$rootSizeFormatted</span></div><div class="computer-stat"><span class="computer-stat-label">Scan Time</span><span class="computer-stat-value time">$compScanTimeFormatted</span></div><div class="computer-stat"><span class="computer-stat-label">Completed</span><span class="computer-stat-value">$compScanEnd</span></div></div>
             </div>
             <div class="tree-container"><div class="tree-header"><span>Name</span><span>Percent</span><span>Size</span><span>Size Graph</span></div><div class="tree-body">
 $treeRows
@@ -708,7 +719,7 @@ $treeRows
     $mainStatsHtml = if ($isMultiComputer) { @"
             <div class="main-stats"><div class="main-stat"><div class="main-stat-value">$($computerGroups.Count)</div><div class="main-stat-label">Computers</div></div><div class="main-stat"><div class="main-stat-value">$totalSizeAllFormatted</div><div class="main-stat-label">Total Analyzed</div></div><div class="main-stat"><div class="main-stat-value">$scanTimeFormatted</div><div class="main-stat-label">Total Duration</div></div></div>
 "@ } else { @"
-            <div class="main-stats"><div class="main-stat"><div class="main-stat-value">$totalSizeAllFormatted</div><div class="main-stat-label">Total Size</div></div><div class="main-stat"><div class="main-stat-value">$($ScanDateStart.ToString('HH:mm:ss'))</div><div class="main-stat-label">Started</div></div><div class="main-stat"><div class="main-stat-value">$($ScanDateEnd.ToString('HH:mm:ss'))</div><div class="main-stat-label">Completed</div></div><div class="main-stat"><div class="main-stat-value">$scanTimeFormatted</div><div class="main-stat-label">Duration</div></div></div>
+            <div class="main-stats"><div class="main-stat"><div class="main-stat-value">$diskTotalFormatted</div><div class="main-stat-label">Disk Capacity</div></div><div class="main-stat"><div class="main-stat-value">$diskUsedFormatted</div><div class="main-stat-label">Used ($diskUsedPercent%)</div></div><div class="main-stat"><div class="main-stat-value">$diskFreeFormatted</div><div class="main-stat-label">Free Space</div></div><div class="main-stat"><div class="main-stat-value">$scanTimeFormatted</div><div class="main-stat-label">Duration</div></div></div>
 "@ }
     
     $html = @"
@@ -834,6 +845,10 @@ function Get-DiskSpaceUsage {
                 if ($result.Errors.HasErrors) { $msg = ""; foreach ($e in $result.Errors) { $msg += "Line $($e.Line): $($e.ErrorText)`n" }; throw $msg }
             }
             $scanDateStart = Get-Date
+            $disk = Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DeviceID='${DriveLetter}:'"
+            $diskTotal = $disk.Size
+            $diskFree = $disk.FreeSpace
+            $diskUsed = $disk.Size - $disk.FreeSpace
             $reader = New-Object MftReader($DriveLetter); $reader.ReadMft($null); $reader.CalculateDirectorySizes()
             $scanDateEnd = Get-Date; $scanTime = $scanDateEnd - $scanDateStart
             $results = @(); $cn = $env:COMPUTERNAME
@@ -842,7 +857,7 @@ function Get-DiskSpaceUsage {
                 $results += [PSCustomObject]@{ ComputerName=$cn; Rank=$rank; Path=$dir.FullPath; Size=$dir.Size
                     SizeFormatted = if ($dir.Size -ge 1TB) { "{0:F2} TB" -f ($dir.Size/1TB) } elseif ($dir.Size -ge 1GB) { "{0:F2} GB" -f ($dir.Size/1GB) } elseif ($dir.Size -ge 1MB) { "{0:F2} MB" -f ($dir.Size/1MB) } elseif ($dir.Size -ge 1KB) { "{0:F2} KB" -f ($dir.Size/1KB) } else { "$($dir.Size) B" }
                     SizeKB=[math]::Round($dir.Size/1KB,2); SizeMB=[math]::Round($dir.Size/1MB,2); SizeGB=[math]::Round($dir.Size/1GB,2)
-                    Type='Directory'; ScanDateStart=$scanDateStart; ScanDateEnd=$scanDateEnd; ScanTime=$scanTime }
+                    Type='Directory'; DiskTotal = $diskTotal;DiskFree = $diskFree;DiskUsed = $diskUsed; ScanDateStart=$scanDateStart; ScanDateEnd=$scanDateEnd; ScanTime=$scanTime }
                 $rank++
             }
             if ($IncludeFiles) {
@@ -851,7 +866,7 @@ function Get-DiskSpaceUsage {
                     $results += [PSCustomObject]@{ ComputerName=$cn; Rank=$rank; Path=$file.FullPath; Size=$file.Size
                         SizeFormatted = if ($file.Size -ge 1TB) { "{0:F2} TB" -f ($file.Size/1TB) } elseif ($file.Size -ge 1GB) { "{0:F2} GB" -f ($file.Size/1GB) } elseif ($file.Size -ge 1MB) { "{0:F2} MB" -f ($file.Size/1MB) } elseif ($file.Size -ge 1KB) { "{0:F2} KB" -f ($file.Size/1KB) } else { "$($file.Size) B" }
                         SizeKB=[math]::Round($file.Size/1KB,2); SizeMB=[math]::Round($file.Size/1MB,2); SizeGB=[math]::Round($file.Size/1GB,2)
-                        Type='File'; ScanDateStart=$scanDateStart; ScanDateEnd=$scanDateEnd; ScanTime=$scanTime }
+                        Type='File'; DiskTotal = $diskTotal;DiskFree = $diskFree;DiskUsed = $diskUsed; ScanDateStart=$scanDateStart; ScanDateEnd=$scanDateEnd; ScanTime=$scanTime }
                     $rank++
                 }
             }
@@ -875,6 +890,10 @@ function Get-DiskSpaceUsage {
                 Initialize-MftReaderType
                 $reader = New-Object MftReader($DriveLetter)
                 $scanDateStart = Get-Date
+                $disk = Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DeviceID='${DriveLetter}:'"
+                $diskTotal = $disk.Size
+                $diskFree = $disk.FreeSpace
+                $diskUsed = $disk.Size - $disk.FreeSpace
                 Write-Verbose "Reading MFT from drive $($DriveLetter):\..."
                 $reader.ReadMft($null)
                 Write-Verbose "MFT read complete: $($reader.RecordCount.ToString('N0')) valid records out of $($reader.TotalRecordsScanned.ToString('N0')) total slots"
@@ -887,7 +906,7 @@ function Get-DiskSpaceUsage {
                 foreach ($dir in $dirs) {
                     $result = [PSCustomObject]@{ ComputerName=$computerName; Rank=$rank; Path=$dir.FullPath; Size=$dir.Size; SizeFormatted=Format-FileSize $dir.Size
                         SizeKB=[math]::Round($dir.Size/1KB,2); SizeMB=[math]::Round($dir.Size/1MB,2); SizeGB=[math]::Round($dir.Size/1GB,2)
-                        Type='Directory'; ScanDateStart=$scanDateStart; ScanDateEnd=$scanDateEnd; ScanTime=$scanTime }
+                        Type='Directory'; DiskTotal = $diskTotal;DiskFree = $diskFree;DiskUsed = $diskUsed; ScanDateStart=$scanDateStart; ScanDateEnd=$scanDateEnd; ScanTime=$scanTime }
                     $allResults.Add($result); $result; $rank++
                 }
                 if ($IncludeFiles) {
@@ -895,7 +914,7 @@ function Get-DiskSpaceUsage {
                     foreach ($file in $files) {
                         $result = [PSCustomObject]@{ ComputerName=$computerName; Rank=$rank; Path=$file.FullPath; Size=$file.Size; SizeFormatted=Format-FileSize $file.Size
                             SizeKB=[math]::Round($file.Size/1KB,2); SizeMB=[math]::Round($file.Size/1MB,2); SizeGB=[math]::Round($file.Size/1GB,2)
-                            Type='File'; ScanDateStart=$scanDateStart; ScanDateEnd=$scanDateEnd; ScanTime=$scanTime }
+                            Type='File'; DiskTotal = $diskTotal;DiskFree = $diskFree;DiskUsed = $diskUsed; ScanDateStart=$scanDateStart; ScanDateEnd=$scanDateEnd; ScanTime=$scanTime }
                         $allResults.Add($result); $result; $rank++
                     }
                 }
@@ -936,6 +955,9 @@ try {
             SizeMB        = $result.SizeMB
             SizeGB        = $result.SizeGB
             Type          = $result.Type
+            DiskTotal     = $result.DiskTotal
+            DiskFree      = $result.DiskFree
+            DiskUsed      = $result.DiskUsed
             ScanDateStart = $result.ScanDateStart
             ScanDateEnd   = $result.ScanDateEnd
             ScanTime      = $result.ScanTime
